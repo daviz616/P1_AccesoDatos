@@ -1,29 +1,34 @@
 package PF;
+
 import java.io.Serializable;
 
-public class Empleado implements Serializable{
-	 /**
-	 * 
-	 */
+public class Empleado implements Serializable {
+	
 	private static final long serialVersionUID = 1L;
-	 private int identificacion;
+	
+	 //de int a String
+	 private String identificacion; 
 	 private String nombre;
 	 private String password;
 	 private String cargo;	 
 	
-	public Empleado(int identificacion, String nombre, String password, String cargo) {
+	
+	public Empleado(String identificacion, String nombre, String password, String cargo) {
 		super();
 		this.identificacion = identificacion;
 		this.nombre = nombre;
 		this.password = password;
 		this.cargo = cargo;
 	}
-	public int getIdentificacion() {
+	
+	public String getIdentificacion() {
 		return identificacion;
 	}
-	public void setIdentificacion(int identificacion) {
+	
+	public void setIdentificacion(String identificacion) {
 		this.identificacion = identificacion;
 	}
+	
 	public String getNombre() {
 		return nombre;
 	}
@@ -42,13 +47,10 @@ public class Empleado implements Serializable{
 	public void setCargo(String cargo) {
 		this.cargo = cargo;
 	}
+	
 	@Override
 	public String toString() {
 		return "Empleado [identificacion=" + identificacion + ", nombre=" + nombre + ", password=" + password
 				+ ", cargo=" + cargo + "]";
 	}
-	
-	
-	 
-	}
-
+}
