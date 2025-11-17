@@ -7,7 +7,7 @@ public class Planta {
     private float precio;
     private int stock;
     
-    // CAMPOS DEL .XML (Añadidos para Punto 4)
+    // CAMPOS DEL .XML (Para Punto 4)
     private String nombre;
     private String descripcion;
     
@@ -32,6 +32,11 @@ public class Planta {
     }
     public String getNombre() {
         return nombre;
+    }
+    
+    
+    public String getDescripcion() {
+    	return descripcion;
     }
 
    

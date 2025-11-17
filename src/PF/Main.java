@@ -32,6 +32,9 @@ public class Main {
 	private static ArrayList<Planta> listaPlantas = new ArrayList<>();
 	private static ArrayList<Empleado> listaEmpleados = new ArrayList<>();
 	
+	// (para Punto 8.2)
+	private static ArrayList<Empleado> listaEmpleadosBaja = new ArrayList<>();
+	
 	//(Para Punto 3)
 	private static Scanner sc = new Scanner(System.in);
 
@@ -160,7 +163,7 @@ public class Main {
 			        float precio = raf.readFloat();
 			        int stock = raf.readInt();
 			        
-			        // Buscar la planta en la lista y ponerle el precio/stock
+			        // Buscar la planta en la lista y ponerle el precio y stock
 			        for (Planta p : listaPlantas) {
 			        	if (p.getCodigo() == codigo) {
 			        		p.setPrecio(precio);
@@ -195,10 +198,34 @@ public class Main {
         }
     }
 	
+	/**
+	 * (Punto 8.2.3.1)
+	 */
+	@SuppressWarnings("unchecked")
+	public static boolean cargarEmpleadosBaja() {
+		File f = new File("empleados/baja/empleadosBaja.dat");
+		// Si el fichero de bajas no existe, no es un error, solo no cargamos nada
+		if (!f.exists()) {
+			System.out.println("No se encontró 'empleadosBaja.dat' (normal si no hay bajas).");
+			return true;
+		}
+		
+        try (FileInputStream ficherolectura = new FileInputStream(f);
+             ObjectInputStream lectura = new ObjectInputStream(ficherolectura)) {
+            listaEmpleadosBaja = (ArrayList<Empleado>) lectura.readObject();
+            System.out.println("Cargados " + listaEmpleadosBaja.size() + " empleados de baja.");
+            return true;
+        } catch (IOException | ClassNotFoundException e) {
+        	System.err.println("ERROR al cargar 'empleadosBaja.dat': " + e.getMessage());
+            return false;
+        }
+    }
+	
 	public static boolean cargarDatos() {
 		System.out.println("\n--- 2. Carga de Datos ---");
 		
-		boolean todoOk = cargarCatalogoXML() && cargarPreciosStockDAT() && cargarEmpleados();
+		// MODIFICADO (para 8.2)
+		boolean todoOk = cargarCatalogoXML() && cargarPreciosStockDAT() && cargarEmpleados() && cargarEmpleadosBaja();
 		
 		if (todoOk) {
 			System.out.println("[ÉXITO] Carga de datos completada.");
@@ -239,7 +266,8 @@ public class Main {
 				
 				if (emp.getCargo().equalsIgnoreCase("gestor")) {
 					System.out.println("Cargando Menú de Gestor...");
-					// Aquí llamaremos a menuGestor;
+					//(Punto 8)
+					menuGestor(emp);
 				} else if (emp.getCargo().equalsIgnoreCase("vendedor")) {
 					// --- LLAMADA AL PUNTO 4 ---
 					menuVendedor(emp);
@@ -258,7 +286,7 @@ public class Main {
 		}
 	}
 	
-	// --- PUNTO 4 (MODIFICADO para Punto 6) ---
+	// --- PUNTO 4 (MODIFICADO para Punto 7) ---
 	
 	public static void menuVendedor(Empleado vendedor) {
 		boolean salir = false;
@@ -267,6 +295,7 @@ public class Main {
 			System.out.println("1. Listar Catálogo (Unificado)");
 			System.out.println("2. Realizar Venta");
 			System.out.println("3. Realizar Devolución"); //(Punto 6)
+			System.out.println("4. Buscar Ticket"); //(Punto 7)
 			System.out.println("0. Cerrar Sesión");
 			
 			// 4.3 (Validación de número)
@@ -282,6 +311,10 @@ public class Main {
 				case 3:
 					//(Punto 6)
 					realizarDevolucion();
+					break;
+				case 4:
+					//(Punto 7)
+					buscarTicket();
 					break;
 				case 0:
 					salir = true;
@@ -311,7 +344,7 @@ public class Main {
 		}
 	}
 
-	// --- PUNTO 5 (Completo) ---
+	// --- PUNTO 5  ---
 
 	public static void realizarVenta(Empleado vendedor) {
 		//"cesta"
@@ -371,7 +404,7 @@ public class Main {
 			String resp = sc.next();
 			
 			if (resp.equalsIgnoreCase("s")) {
-				// 5.4.1 Modificación del fichero de acceso directo (y RAM)
+				// 5.4.1 Modificación del fichero de acceso directo (y en el temporal)
 				boolean stockOk = actualizarStockFicheroYLista(cesta, false); // false = restar
 				
 				if (stockOk) {
@@ -465,7 +498,7 @@ public class Main {
 	
 	
 	/**
-	 * 5.4.1 Modificación de stock (MODIFICADO para 6.4)
+	 * 5.4.1 Modificación de stock (Cambiado para 6.4)
 	 */
 	public static boolean actualizarStockFicheroYLista(ArrayList<LineaVenta> cesta, boolean sumar) {
 		try (RandomAccessFile raf = new RandomAccessFile("plantas/plantas.dat", "rw")) {
@@ -491,7 +524,7 @@ public class Main {
 				raf.seek(posStock);
 				raf.writeInt(nuevoStock);
 				
-				// Actualizamos también la lista en RAM (listaPlantas)
+				// Actualizamos también la lista temporal (listaPlantas)
 				Planta plantaEnLista = buscarPlantaEnLista(codigo);
 				if (plantaEnLista != null) {
 					plantaEnLista.setStock(nuevoStock);
@@ -587,115 +620,344 @@ public class Main {
 	}
 	
 	
-	// --- PUNTO 6 ---
+	// --- PUNTO 6  ---
+
+		public static ArrayList<LineaVenta> leerProductosDeTicket(File fTicket) {
+			ArrayList<LineaVenta> productos = new ArrayList<>();
+			boolean zonaProductos = false;
+			
+			try (BufferedReader br = new BufferedReader(new FileReader(fTicket))) {
+				String linea;
+				while ((linea = br.readLine()) != null) {
+					
+					if (linea.startsWith("-----------------")) {
+						zonaProductos = !zonaProductos; 
+						continue; 
+					}
+					
+					if (zonaProductos && !linea.startsWith("CodigoProducto")) {
+						try {
+							String[] partes = linea.trim().split("\\s+");
+							int cod = Integer.parseInt(partes[0]);
+							int cant = Integer.parseInt(partes[1]);
+							
+							Planta p = buscarPlantaEnLista(cod);
+							if (p != null) {
+								productos.add(new LineaVenta(p, cant));
+							}
+						} catch (Exception e) {
+							System.err.println("Error al leer línea de producto: " + linea);
+						}
+					}
+				}
+			} catch (IOException e) {
+				System.err.println("Error leyendo ticket para devolución: " + e.getMessage());
+			}
+			return productos;
+		}
+		
+		public static void realizarDevolucion() {
+			System.out.println("\n--- 6. Realizar Devolución ---");
+			
+			// 6.1 Buscar el ticket
+			int numTicket = leerNumeroValidado("Introduce el Nº de Ticket a devolver: ");
+			String nombreFichero = numTicket + ".txt";
+			
+			File fTicket = new File("tickets/" + nombreFichero);
+			File fDevolucion = new File("devoluciones/" + nombreFichero);
+
+			if (fDevolucion.exists()) {
+				System.err.println("Error: El ticket " + numTicket + " ya ha sido devuelto.");
+				return;
+			}
+			if (!fTicket.exists()) {
+				System.err.println("Error: El ticket " + numTicket + " no se encuentra en la carpeta 'tickets'.");
+				return;
+			}
+			
+			// --- 1ª LECTURA: Sacar los productos --- (Punto 6.4)
+			ArrayList<LineaVenta> productosDevueltos = leerProductosDeTicket(fTicket);
+
+			// 6.4 Modificar el stock
+			if (!productosDevueltos.isEmpty()) {
+				actualizarStockFicheroYLista(productosDevueltos, true); // true = sumar
+			} else {
+				System.err.println("Error: No se encontraron productos en el ticket.");
+				return;
+			}
+			
+			// --- 2ª LECTURA: Copiar, modificar total y mover ---
+			try (BufferedReader br = new BufferedReader(new FileReader(fTicket));
+				 PrintWriter pw = new PrintWriter(new FileWriter(fDevolucion))) {
+				
+				String linea;
+				while ((linea = br.readLine()) != null) {
+					
+					if (linea.startsWith("Total:")) {
+						// 6.3 Leer total y ponerlo en negativo
+						try {
+							String[] partesTotal = linea.split(" ");
+							float total = Float.parseFloat(partesTotal[1]);
+							pw.println(String.format("Total: %.2f €", -Math.abs(total)));
+						} catch (Exception e) {
+							pw.println(linea); // Si falla, copia la línea original
+						}
+					} else {
+						pw.println(linea); // Copia la línea tal cual
+					}
+				}
+				
+				// 6.2 Escribir -- DEVOLUCIÓN--
+				pw.println("-- DEVOLUCIÓN--");
+				
+			} catch (IOException e) {
+				System.err.println("Error al re-escribir el ticket de devolución: " + e.getMessage());
+				return;
+			}
+			
+			// 6.4 Mover el ticket (borrando el viejo)
+			fTicket.delete();
+			System.out.println("Devolución completada. Ticket " + numTicket + " movido a 'devoluciones'.");
+		}
+	
+	// --- PUNTO 7 ---
 	
 	/**
-	 * 6. Devolución
+	 * 7.1 Leer el fichero de caracteres indicado por teclado
 	 */
-	public static void realizarDevolucion() {
-		System.out.println("\n--- 6. Realizar Devolución ---");
-		
-		// 6.1 Buscar el ticket
-		int numTicket = leerNumeroValidado("Introduce el Nº de Ticket a devolver: ");
+	public static void buscarTicket() {
+		System.out.println("\n--- 7. Búsqueda de Tickets ---");
+		int numTicket = leerNumeroValidado("Introduce el Nº de Ticket a buscar: ");
 		String nombreFichero = numTicket + ".txt";
 		
 		File fTicket = new File("tickets/" + nombreFichero);
 		File fDevolucion = new File("devoluciones/" + nombreFichero);
-
-		if (fDevolucion.exists()) {
-			System.err.println("Error: El ticket " + numTicket + " ya ha sido devuelto.");
-			return;
-		}
-		if (!fTicket.exists()) {
-			System.err.println("Error: El ticket " + numTicket + " no se encuentra en la carpeta 'tickets'.");
-			return;
-		}
+		File fParaLeer = null;
 		
-		// Guardar los datos leídos
-		ArrayList<String> lineasTicket = new ArrayList<>();
-		ArrayList<LineaVenta> productosDevueltos = new ArrayList<>();
-		int indiceLineaTotal = -1;
-		float total = 0;
-		
-		try (BufferedReader br = new BufferedReader(new FileReader(fTicket))) {
-			String linea;
-			int i = 0;
-			boolean zonaProductos = false;
-			
-			while ((linea = br.readLine()) != null) {
-				lineasTicket.add(linea); // Guardamos la línea para re-escribirla
-				
-				// 6.3 Leer el total
-				if (linea.startsWith("Total:")) {
-					indiceLineaTotal = i; // Guardamos la posición de la línea del total
-					try {
-						String[] partesTotal = linea.split(" ");
-						total = Float.parseFloat(partesTotal[1]);
-					} catch (Exception e) {
-						System.err.println("Error al leer el total del ticket.");
-					}
-				}
-				
-				// 6.4 Leer las plantas devueltas
-				if (linea.startsWith("-----------------")) {
-					zonaProductos = !zonaProductos; // Activa/desactiva la zona de productos
-				}
-				
-				if (zonaProductos && !linea.startsWith("CodigoProducto") && !linea.startsWith("-----------------")) {
-					try {
-						String[] partes = linea.trim().split("\\s+");
-						int cod = Integer.parseInt(partes[0]);
-						int cant = Integer.parseInt(partes[1]);
-						
-						Planta p = buscarPlantaEnLista(cod);
-						if (p != null) {
-							productosDevueltos.add(new LineaVenta(p, cant));
-						}
-					} catch (Exception e) {
-						System.err.println("Error al leer línea de producto: " + linea);
-					}
-				}
-				i++;
-			}
-			
-		} catch (IOException e) {
-			System.err.println("Error al leer el ticket: " + e.getMessage());
-			return;
-		}
-		
-		// --- Aquí, hemos leído el ticket ---
-		
-		// 6.4 Modificar el stock
-		if (!productosDevueltos.isEmpty()) {
-			actualizarStockFicheroYLista(productosDevueltos, true); // = sumar
+		if (fTicket.exists()) {
+			fParaLeer = fTicket;
+			System.out.println("--- Mostrando Ticket " + numTicket + " (Venta) ---");
+		} else if (fDevolucion.exists()) {
+			fParaLeer = fDevolucion;
+			System.out.println("--- Mostrando Ticket " + numTicket + " (Devolución) ---");
 		} else {
-			System.err.println("Error: No se encontraron productos en el ticket.");
+			System.err.println("Error: El ticket " + numTicket + " no se encuentra.");
 			return;
 		}
 		
-		// 6.2 Escribir -- DEVOLUCIÓN --
-		lineasTicket.add("-- DEVOLUCIÓN--");
-		
-		// 6.3 Modificar total a negativo
-		if (indiceLineaTotal != -1) {
-			lineasTicket.set(indiceLineaTotal, String.format("Total: %.2f €", -Math.abs(total)));
-		}
-		
-		// 6.4 Mover el ticket (Escribiendo el nuevo y borrando el viejo)
-		try (PrintWriter pw = new PrintWriter(new FileWriter(fDevolucion))) {
-			for (String linea : lineasTicket) {
-				pw.println(linea);
+		// Si encontramos el archivo, lo leemos y lo mostramos
+		try (BufferedReader br = new BufferedReader(new FileReader(fParaLeer))) {
+			String linea;
+			System.out.println(""); // Línea en blanco para separar
+			while ((linea = br.readLine()) != null) {
+				System.out.println(linea);
 			}
 		} catch (IOException e) {
-			System.err.println("Error al escribir el ticket de devolución: " + e.getMessage());
-			return;
+			System.err.println("Error al leer el archivo del ticket: " + e.getMessage());
+		}
+	}
+	
+	// ---PUNTO 8 (Solo 8.2 Gestión Empleados) ---
+	
+	/**
+	 * 8. Menu de Gestores
+	 */
+	public static void menuGestor(Empleado gestor) {
+		boolean salir = false;
+		while (!salir) {
+			System.out.println("\n--- Menú Gestor (" + gestor.getNombre() + ") ---");
+			System.out.println("1. Gestión de Plantas");
+			System.out.println("2. Gestión de Empleados");
+			System.out.println("3. Calcular Estadísticas");
+			System.out.println("0. Cerrar Sesión");
+			
+			int opcion = leerNumeroValidado("Elige una opción: ");
+			
+			switch(opcion) {
+				case 1:
+					System.out.println("... (Punto 8.1: Gestión de Plantas - PENDIENTE) ...");
+					break;
+				case 2:
+					// (Punto 8.2)
+					gestionEmpleados(); 
+					break;
+				case 3:
+					System.out.println("... (Punto 8.3: Estadísticas - PENDIENTE) ...");
+					break;
+				case 0:
+					salir = true;
+					System.out.println("Cerrando sesión...");
+					break;
+				default:
+					System.err.println("Opción no válida.");
+			}
+		}
+	}
+	
+	/**
+	 * 8.2 Submenú de Gestión Empleados
+	 */
+	public static void gestionEmpleados() {
+		boolean salir = false;
+		while (!salir) {
+			System.out.println("\n--- 8.2 Gestión de Empleados ---");
+			System.out.println("1. Dar de Alta Empleado");
+			System.out.println("2. Dar de Baja Empleado");
+			System.out.println("3. Rescatar Empleado");
+			System.out.println("0. Volver al Menú Gestor");
+			
+			int opcion = leerNumeroValidado("Elige una opción: ");
+			
+			switch(opcion) {
+				case 1:
+					altaEmpleado();
+					break;
+				case 2:
+					bajaEmpleado();
+					break;
+				case 3:
+					rescatarEmpleado();
+					break;
+				case 0:
+					salir = true;
+					break;
+				default:
+					System.err.println("Opción no válida.");
+			}
+		}
+	}
+	
+	/**
+	 * 8.2.1 Dar de alta empleado
+	 */
+	public static void altaEmpleado() {
+		System.out.println("\n--- 8.2.1 Alta Empleado ---");
+		
+		// 8.2.1.2 Control de errores
+		System.out.print("Introduce ID (4 dígitos): ");
+		String id = sc.next();
+		while (id.length() != 4 || !id.matches("\\d+")) {
+			System.err.println("Error: El ID debe tener 4 números.");
+			System.out.print("Introduce ID (4 dígitos): ");
+			id = sc.next();
 		}
 		
-		// Si todo ha ido bien, borramos el original
-		fTicket.delete();
+		System.out.print("Introduce Nombre: ");
+		String nombre = sc.next(); 
 		
-		System.out.println("Devolución completada. Ticket " + numTicket + " movido a 'devoluciones'.");
+		System.out.print("Introduce Contraseña: ");
+		String pass = sc.next();
+		
+		System.out.print("Introduce Cargo (vendedor/gestor): ");
+		String cargo = sc.next().toLowerCase();
+		while (!cargo.equals("vendedor") && !cargo.equals("gestor")) {
+			System.err.println("Error: El cargo debe ser 'vendedor' o 'gestor'.");
+			System.out.print("Introduce Cargo (vendedor/gestor): ");
+			cargo = sc.next().toLowerCase();
+		}
+		
+		// 8.2.1.1 Añadir empleado al ArrayList
+		Empleado nuevoEmp = new Empleado(id, nombre, pass, cargo);
+		listaEmpleados.add(nuevoEmp);
+		
+		// 8.2.1.3 Escribir al empleado en el fichero
+		guardarListaEmpleados();
+		System.out.println("Empleado " + nombre + " dado de alta.");
 	}
+	
+	/**
+	 * 8.2.2 Dar de baja Empleado
+	 */
+	public static void bajaEmpleado() {
+		System.out.println("\n--- 8.2.2 Baja Empleado ---");
+		System.out.print("Introduce ID del empleado a dar de baja: ");
+		String idBaja = sc.next();
+		idBaja = String.format("%4s", idBaja).replace(' ', '0'); 
+		
+		Empleado empEncontrado = null;
+		for (Empleado emp : listaEmpleados) {
+			if (emp.getIdentificacion().equals(idBaja)) {
+				empEncontrado = emp;
+				break;
+			}
+		}
+		
+		if (empEncontrado != null) {
+			// 8.2.2.1 Mover
+			listaEmpleados.remove(empEncontrado);
+			listaEmpleadosBaja.add(empEncontrado);
+			
+			// 8.2.2.2 y 8.2.2.3 Sobreescribir ficheros
+			guardarListaEmpleados();
+			guardarListaEmpleadosBaja();
+			System.out.println("Empleado " + empEncontrado.getNombre() + " dado de baja.");
+		} else {
+			System.err.println("Error: No se encontró un empleado activo con ese ID.");
+		}
+	}
+	
+	/**
+	 * 8.2.3 Rescatar empleado
+	 */
+	public static void rescatarEmpleado() {
+		System.out.println("\n--- 8.2.3 Rescatar Empleado ---");
+		System.out.print("Introduce ID del empleado a rescatar (de la baja): ");
+		String idRescate = sc.next();
+		idRescate = String.format("%4s", idRescate).replace(' ', '0');
+		
+		// 8.2.3.1 (Ya están cargados en listaEmpleadosBaja)
+		Empleado empEncontrado = null;
+		for (Empleado emp : listaEmpleadosBaja) {
+			if (emp.getIdentificacion().equals(idRescate)) {
+				empEncontrado = emp;
+				break;
+			}
+		}
+		
+		if (empEncontrado != null) {
+			// 8.2.3.2 Mover
+			listaEmpleadosBaja.remove(empEncontrado);
+			listaEmpleados.add(empEncontrado);
+			
+			// 8.2.3.3 y 8.2.3.4 Sobreescribir ficheros
+			guardarListaEmpleadosBaja();
+			guardarListaEmpleados();
+			System.out.println("Empleado " + empEncontrado.getNombre() + " rescatado.");
+		} else {
+			System.err.println("Error: No se encontró un empleado de baja con ese ID.");
+		}
+	}
+	
+	/**
+	 * Helper para 8.2 Sobrescribe empleados.dat
+	 */
+	public static void guardarListaEmpleados() {
+		try (FileOutputStream FicheroEscritura = new FileOutputStream("empleados/empleados.dat");
+	             ObjectOutputStream escritura = new ObjectOutputStream(FicheroEscritura)) {
+			
+			escritura.writeObject(listaEmpleados);
+			System.out.println("(Info: Fichero 'empleados.dat' actualizado.)");
+			
+		} catch (IOException e) {
+			System.err.println("ERROR al guardar 'empleados.dat': " + e.getMessage());
+		}
+	}
+	
+	/**
+	 * Helper para 8.2 Sobrescribe empleadosBaja.dat
+	 */
+	public static void guardarListaEmpleadosBaja() {
+		try (FileOutputStream FicheroEscritura = new FileOutputStream("empleados/baja/empleadosBaja.dat");
+	             ObjectOutputStream escritura = new ObjectOutputStream(FicheroEscritura)) {
+			
+			escritura.writeObject(listaEmpleadosBaja);
+			System.out.println("(Info: Fichero 'empleadosBaja.dat' actualizado.)");
+			
+		} catch (IOException e) {
+			System.err.println("ERROR al guardar 'empleadosBaja.dat': " + e.getMessage());
+		}
+	}
+
 	
 	
 	public static void main(String[] args) {
